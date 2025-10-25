@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HR Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <script type="module" src="scripts/firebase-app.js"></script>
+</head>
+<body>
+  <header>
+    <h2>CDA HR Dashboard</h2>
+    <button id="logoutBtn">Logout</button>
+  </header>
+
+  <main>
+    <h3>List of Employees</h3>
+
+    <form id="employeeForm">
+      <input type="hidden" id="editKey" />
+      <input type="text" id="name" placeholder="Employee Name" required />
+      <input type="text" id="position" placeholder="Position" required />
+      <input type="text" id="department" placeholder="Department" required />
+      <input type="file" id="photo" accept="image/*" />
+      <img id="preview" src="" style="width:80px; display:none; border-radius:5px;"/>
+      <button type="submit" id="addBtn">Add Employee</button>
+    </form>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Photo</th>
+          <th>Name</th>
+          <th>Position</th>
+          <th>Department</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="employeeTable"></tbody>
+    </table>
+  </main>
+
+  <script type="module">
+    import { db, ref, push, set, onValue, remove, update } from "./scripts/firebase-app.js";
+
+    // Restrict access
+    if (localStorage.getItem("loggedIn") !== "true") {
+      window.location.href = "index.html";
+    }
+
+    const employeeForm = document.getElementById("employeeForm");
+    const employeeTable = document.getElementById("employeeTable");
+    const preview = document.getElementById("preview");
+    const photoInput = document.getElementById("photo");
+    const editKey = document.getElementById("editKey");
+
+    // Preview image
+    photoInput.addEventListener("change", () => {
+      const file = photoInput.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = e => {
+          preview.src = e.target.result;
+          preview.style.display = "block";
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // Save Employee
+    employeeForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = document.getElementById("name").value;
+      const position = document.getElementById("position").value;
+      const department = document.getElementById("department").value;
+      const photo = preview.src;
+
+      const employeeData = { name, position, department, photo };
+
+      if (editKey.value) {
+        await update(ref(db, 'employees/' + editKey.value), employeeData);
+        editKey.value = "";
+        document.getElementById("addBtn").textContent = "Add Employee";
+      } else {
+        const newEmpRef = push(ref(db, "employees"));
+        await set(newEmpRef, employeeData);
+      }
+
+      employeeForm.reset();
+      preview.style.display = "none";
+    });
+
+    // Load Employees
+    onValue(ref(db, "employees"), (snapshot) => {
+      employeeTable.innerHTML = "";
+      snapshot.forEach((childSnapshot) => {
+        const key = childSnapshot.key;
+        const emp = childSnapshot.val();
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td><img src="${emp.photo || ''}" width="60" style="border-radius:5px;"></td>
+          <td>${emp.name}</td>
+          <td>${emp.position}</td>
+          <td>${emp.department}</td>
+          <td>
+            <button class="editBtn" data-key="${key}">Edit</button>
+            <button class="deleteBtn" data-key="${key}">Delete</button>
+          </td>
+        `;
+        employeeTable.appendChild(row);
+      });
+    });
+
+    // Edit & Delete Actions
+    employeeTable.addEventListener("click", async (e) => {
+      const key = e.target.dataset.key;
+      if (e.target.classList.contains("editBtn")) {
+        const empRef = ref(db, "employees/" + key);
+        onValue(empRef, (snapshot) => {
+          const emp = snapshot.val();
+          document.getElementById("name").value = emp.name;
+          document.getElementById("position").value = emp.position;
+          document.getElementById("department").value = emp.department;
+          preview.src = emp.photo;
+          preview.style.display = "block";
+          editKey.value = key;
+          document.getElementById("addBtn").textContent = "Update Employee";
+        }, { onlyOnce: true });
+      }
+
+      if (e.target.classList.contains("deleteBtn")) {
+        if (confirm("Delete this employee?")) {
+          await remove(ref(db, "employees/" + key));
+        }
+      }
+    });
+
+    // Logout
+    document.getElementById("logoutBtn").addEventListener("click", () => {
+      localStorage.removeItem("loggedIn");
+      window.location.href = "index.html";
+    });
+  </script>
+</body>
+</html>
